@@ -1,0 +1,4 @@
+# html
+pyecharts
+# snapshot
+snapshot-selenium

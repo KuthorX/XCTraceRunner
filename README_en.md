@@ -10,6 +10,12 @@ A simple vanilla iOS performance test tool.
 
 XCode 12.0.1 + python 3.7
 
+### Data Visualization
+
+- Install pkg by [requirements.txt](./requirements.txt)
+
+- If need snapshot, download [chromedriver](https://sites.google.com/a/chromium.org/chromedriver/downloads)
+
 ## How to use
 
 - Input: `python xctrace_runner.py -h` to get help info
@@ -90,5 +96,4 @@ https://bbs.perfdog.qq.com/article-detail.html?id=5
 
 ## Extended features / subsequent todo
 
-- For daily testing - visualization data (local charting)
 - For automated testing - not considered, the principle is very simple. If necessary, the corresponding logic can be applied according to the actual project

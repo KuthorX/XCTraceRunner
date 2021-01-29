@@ -8,12 +8,14 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 import argparse
 import json
+from data_visualizer import ParsedData, DataVisualizer
 
 
 def main():
     Path("./temp/").mkdir(parents=True, exist_ok=True)
     Path("./temp/parse").mkdir(parents=True, exist_ok=True)
     Path("./temp/save").mkdir(parents=True, exist_ok=True)
+    Path("./temp/visualize").mkdir(parents=True, exist_ok=True)
 
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -44,24 +46,45 @@ def main():
     time_limit = args.time_limit
 
     # record
-    recorder = XCTraceRecorder(
-        template_path=template_path,
-        device_id=device_id
-    )
+    recorder = XCTraceRecorder(template_path=template_path, device_id=device_id)
     recorder.record(time_limit=time_limit)
     trace_path = recorder.output_trace_path
 
     # export
     trace_id = recorder.id
     log_path = f"./temp/parse/{trace_id}_parse.log"
-    parser = XCTraceParser(
-        trace_path,
-        log_path,
-        target_process_name,
-        trace_id=trace_id
-    )
+    parser = XCTraceParser(trace_path, log_path, target_process_name, trace_id=trace_id)
     parser.parse()
     parser.save()
+
+    # visualize
+    print("开始可视化 Start visualize")
+    html_path = f"./temp/visualize/{trace_id}_fps.html"
+    trace_id = recorder.id
+    fps_pd = XCTraceVisualizer(
+        f"{trace_id} FPS",
+        trace_id=trace_id,
+        data_type=DataType.FPS,
+        data_detail=parser.fps_values,
+    ).transform_data()
+    cpu_pd = XCTraceVisualizer(
+        f"{trace_id} CPU",
+        trace_id=trace_id,
+        data_type=DataType.CPU,
+        data_detail=parser.cpu_values,
+    ).transform_data()
+    mem_pd = XCTraceVisualizer(
+        f"{trace_id} MEM",
+        trace_id=trace_id,
+        data_type=DataType.MEM,
+        data_detail=parser.mem_values,
+    ).transform_data()
+    dv = DataVisualizer(html_path=html_path)
+    dv.add_parsed_data(fps_pd)
+    dv.add_parsed_data(cpu_pd)
+    dv.add_parsed_data(mem_pd)
+    dv.render_html()
+    print(f"可视化完成 End visualize, render HTML path: {html_path}")
 
 
 class XCTraceRecorder:
@@ -86,7 +109,7 @@ class XCTraceRecorder:
         with open(self.log_path, "a") as f:
             f.write(strs)
             f.write("\n")
-    
+
     def record(self, time_limit=None):
         args_dict = {
             "template": self.template_path,
@@ -129,9 +152,9 @@ class XCTraceParser:
         self.prefix_cmd = f"xcrun xctrace export --input {trace_path} "
         self.target_process_name = target_process_name
 
-        self._fps_values = None
-        self._cpu_values = None
-        self._mem_values = None
+        self.fps_values = None
+        self.cpu_values = None
+        self.mem_values = None
 
     def print_log(self, strs):
         print(strs)
@@ -140,21 +163,21 @@ class XCTraceParser:
             f.write("\n")
 
     def parse(self):
-        self.print_log('开始解析 Start parsing')
+        self.print_log("开始解析 Start parsing")
 
         self._get_root()
         fps_values = self._get_fps()
         cpu_values, mem_values = self._get_cpu_mem()
         # 原始数据是按时间倒序的
         # The raw data is in reverse chronological order
-        self._fps_values = list(reversed(fps_values))
-        self._cpu_values = list(reversed(cpu_values))
-        self._mem_values = list(reversed(mem_values))
+        self.fps_values = list(reversed(fps_values))
+        self.cpu_values = list(reversed(cpu_values))
+        self.mem_values = list(reversed(mem_values))
 
-        self.print_log('解析完成 End parsing')
+        self.print_log("解析完成 End parsing")
 
     def save(self, fps_path=None, cpu_path=None, mem_path=None, indent=2):
-        self.print_log('开始保存 Start saving')
+        self.print_log("开始保存 Start saving")
 
         if fps_path is None:
             fps_path = f"./temp/save/{self.id}_fps.json"
@@ -163,18 +186,18 @@ class XCTraceParser:
         if mem_path is None:
             mem_path = f"./temp/save/{self.id}_mem.json"
 
-        self.print_log(f'fps_path: {fps_path}')
-        self.print_log(f'cpu_path: {cpu_path}')
-        self.print_log(f'mem_path: {mem_path}')
+        self.print_log(f"fps_path: {fps_path}")
+        self.print_log(f"cpu_path: {cpu_path}")
+        self.print_log(f"mem_path: {mem_path}")
 
         with open(fps_path, "w") as f:
-            f.write(json.dumps(self._fps_values, indent=indent))
+            f.write(json.dumps(self.fps_values, indent=indent))
         with open(cpu_path, "w") as f:
-            f.write(json.dumps(self._cpu_values, indent=indent))
+            f.write(json.dumps(self.cpu_values, indent=indent))
         with open(mem_path, "w") as f:
-            f.write(json.dumps(self._mem_values, indent=indent))
+            f.write(json.dumps(self.mem_values, indent=indent))
 
-        self.print_log('保存完成 End saving')
+        self.print_log("保存完成 End saving")
 
     def _get_root(self):
         """
@@ -297,6 +320,110 @@ class XCTraceParser:
         self.print_log(f"mem_values {mem_values}")
 
         return cpu_values, mem_values
+
+
+class DataType:
+    FPS = 0
+    CPU = 1
+    MEM = 2
+
+
+def date2timestamp(date_str, format_str="%M:%S"):
+    import time
+
+    tss1 = date_str
+    time_array = time.strptime(tss1, format_str)
+    return int(time.mktime(time_array))
+
+
+def timestamp2date(timestamp, format_str="%M:%S"):
+    import time
+
+    time_array = time.localtime(timestamp)
+    date = time.strftime(format_str, time_array)
+    return date
+
+
+class XCTraceVisualizer:
+    def __init__(self, title, trace_id, data_type: DataType, data_detail: list):
+        self.title = title
+        self.trace_id = trace_id
+        self.data_type = data_type
+        self.data_detail = data_detail
+
+        self._y_label = None
+        # list, {"time": "MM:SS", "value": number}
+        self._t_data = None
+
+    def transform_data(self):
+        t = self.data_type
+        if t == DataType.FPS:
+            self._y_label = "FPS"
+            self._t_data = self._transform_fps_data()
+        elif t == DataType.CPU:
+            self._y_label = "CPU"
+            self._t_data = self._transform_cpu_data()
+        elif t == DataType.MEM:
+            self._y_label = "MEM"
+            self._t_data = self._transform_mem_data()
+        return self._get_dv_parsed_data()
+
+    def _get_dv_parsed_data(self):
+        y_seq = []
+        x_seq = []
+        for item in self._t_data:
+            y_seq.append(item["value"])
+            x_seq.append(item["time"])
+        return ParsedData(
+            title=self.title, y_label=self._y_label, y_seq=y_seq, x_seq=x_seq
+        )
+
+    def _transform_fps_data(self):
+        d = []
+        for item in self.data_detail:
+            _time = item["time"]
+            _value = item["fps"]
+            ts = date2timestamp(_time.split(".")[0])
+            d.append({"time": ts, "value": _value})
+        s_data = sorted(d, key=lambda item: item["time"])
+        return self._remove_same_time_data(s_data)
+
+    def _transform_cpu_data(self):
+        d = []
+        for item in self.data_detail:
+            _time = item["time"]
+            _value = round(item["cpu"], 2)
+            ts = date2timestamp(_time.split(".")[0])
+            d.append({"time": ts, "value": _value})
+        s_data = sorted(d, key=lambda item: item["time"])
+        return self._remove_same_time_data(s_data)
+
+    def _transform_mem_data(self):
+        d = []
+        for item in self.data_detail:
+            _time = item["time"]
+            _value = round(item["memory"], 2)
+            ts = date2timestamp(_time.split(".")[0])
+            d.append({"time": ts, "value": _value})
+        s_data = sorted(d, key=lambda item: item["time"])
+        return self._remove_same_time_data(s_data)
+
+    def _remove_same_time_data(self, data):
+        filter_data = []
+        before_item = None
+        for item in data:
+            _time = item["time"]
+            _value = item["value"]
+            _date = timestamp2date(item["time"])
+            if before_item:
+                if before_item["time"] == _time:
+                    filter_data[-1]["value"] = _value
+                else:
+                    filter_data.append({"time": _date, "value": _value})
+            else:
+                filter_data.append({"time": _date, "value": _value})
+            before_item = item
+        return filter_data
 
 
 def get_random_id(length=8, seed="1234567890qwertyuiopasdfghjklzxcvbnm"):

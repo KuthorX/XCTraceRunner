@@ -10,6 +10,12 @@
 
 XCode 12.0.1 + python 3.7
 
+### 可视化
+
+- 生成 html，需要安装 [requirements.txt](./requirements.txt) 下的包
+
+- 生成图片，需要下载 [chromedriver](https://sites.google.com/a/chromium.org/chromedriver/downloads)
+
 ## 如何使用
 
 直接运行该脚本即可，最后会输出对应应用的性能数据（fps + cpu + mem）的 Json 。
@@ -88,5 +94,4 @@ https://bbs.perfdog.qq.com/article-detail.html?id=5
 
 ## 扩展特性 / 后续 Todo
 
-- 对于日常测试 - 可视化数据（本地绘制图表）
 - 对于自动化测试 - 不考虑，原理很简单，根据实际工程应用相应逻辑即可
